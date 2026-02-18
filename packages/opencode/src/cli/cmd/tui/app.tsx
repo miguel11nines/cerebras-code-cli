@@ -45,6 +45,10 @@ import { PromptRefProvider, usePromptRef } from "./context/prompt"
 import { Log } from "@/util/log"
 
 async function getTerminalBackgroundColor(): Promise<"dark" | "light"> {
+  // Allow callers (e.g. VS Code extension) to override via env var
+  const envTheme = process.env.OPENCODE_THEME
+  if (envTheme === "light" || envTheme === "dark") return envTheme
+
   // can't set raw mode if not a TTY
   if (!process.stdin.isTTY) return "dark"
 

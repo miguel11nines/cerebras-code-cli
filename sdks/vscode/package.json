@@ -1,12 +1,12 @@
 {
-  "name": "opencode",
-  "displayName": "opencode",
-  "description": "opencode for VS Code",
+  "name": "cerebras-code",
+  "displayName": "Cerebras Code",
+  "description": "Cerebras Code for VS Code",
   "version": "1.1.63",
-  "publisher": "sst-dev",
+  "publisher": "cerebras",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anomalyco/opencode"
+    "url": "https://github.com/cerebras/cerebras-code-cli"
   },
   "license": "MIT",
   "icon": "images/icon.png",
@@ -23,56 +23,66 @@
   "activationEvents": [],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "title": "Cerebras Code",
+      "properties": {
+        "cerebras-code.binaryPath": {
+          "type": "string",
+          "default": "opencode",
+          "description": "Path to the Cerebras Code CLI binary"
+        }
+      }
+    },
     "commands": [
       {
-        "command": "opencode.openTerminal",
-        "title": "Open opencode",
+        "command": "cerebras-code.openTerminal",
+        "title": "Open Cerebras Code",
         "icon": {
           "light": "images/button-dark.svg",
           "dark": "images/button-light.svg"
         }
       },
       {
-        "command": "opencode.openNewTerminal",
-        "title": "Open opencode in new tab",
+        "command": "cerebras-code.openNewTerminal",
+        "title": "Open Cerebras Code in new tab",
         "icon": {
           "light": "images/button-dark.svg",
           "dark": "images/button-light.svg"
         }
       },
       {
-        "command": "opencode.addFilepathToTerminal",
+        "command": "cerebras-code.addFilepathToTerminal",
         "title": "Add Filepath to Terminal"
       }
     ],
     "menus": {
       "editor/title": [
         {
-          "command": "opencode.openNewTerminal",
+          "command": "cerebras-code.openNewTerminal",
           "group": "navigation"
         }
       ]
     },
     "keybindings": [
       {
-        "command": "opencode.openTerminal",
-        "title": "Run opencode",
+        "command": "cerebras-code.openTerminal",
+        "title": "Run Cerebras Code",
         "key": "cmd+escape",
         "mac": "cmd+escape",
         "win": "ctrl+escape",
         "linux": "ctrl+escape"
       },
       {
-        "command": "opencode.openNewTerminal",
-        "title": "Run opencode",
+        "command": "cerebras-code.openNewTerminal",
+        "title": "Run Cerebras Code in new tab",
         "key": "cmd+shift+escape",
         "mac": "cmd+shift+escape",
         "win": "ctrl+shift+escape",
         "linux": "ctrl+shift+escape"
       },
       {
-        "command": "opencode.addFilepathToTerminal",
-        "title": "opencode: Insert At-Mentioned",
+        "command": "cerebras-code.addFilepathToTerminal",
+        "title": "Cerebras Code: Insert At-Mentioned",
         "key": "cmd+alt+k",
         "mac": "cmd+alt+k",
         "win": "ctrl+alt+K",
