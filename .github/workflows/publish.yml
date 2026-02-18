@@ -60,21 +60,21 @@ jobs:
       - name: Smoke test - version
         working-directory: packages/opencode
         run: |
-          BINARY=$(ls dist/*/bin/cerebras 2>/dev/null | head -1 || ls dist/*/bin/opencode 2>/dev/null | head -1)
+          BINARY=$(ls dist/*/bin/cerebras 2>/dev/null | grep -v musl | head -1 || ls dist/*/bin/opencode 2>/dev/null | grep -v musl | head -1)
           chmod +x "$BINARY"
           "$BINARY" --version
 
       - name: Smoke test - help
         working-directory: packages/opencode
         run: |
-          BINARY=$(ls dist/*/bin/cerebras 2>/dev/null | head -1 || ls dist/*/bin/opencode 2>/dev/null | head -1)
+          BINARY=$(ls dist/*/bin/cerebras 2>/dev/null | grep -v musl | head -1 || ls dist/*/bin/opencode 2>/dev/null | grep -v musl | head -1)
           "$BINARY" --help
 
       - name: Smoke test - server starts and agents load
         if: ${{ !matrix.baseline }}
         working-directory: packages/opencode
         run: |
-          BINARY=$(ls dist/*/bin/cerebras 2>/dev/null | head -1 || ls dist/*/bin/opencode 2>/dev/null | head -1)
+          BINARY=$(ls dist/*/bin/cerebras 2>/dev/null | grep -v musl | head -1 || ls dist/*/bin/opencode 2>/dev/null | grep -v musl | head -1)
           "$BINARY" serve --port 0 &
           PID=$!
           sleep 5
