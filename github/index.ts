@@ -113,6 +113,9 @@ type IssueQueryResponse = {
   }
 }
 
+const AGENT_NAME = "Cerebras Agent"
+const AGENT_EMAIL = "193945191+isaact-cerebras@users.noreply.github.com"
+
 const { client, server } = createOpencode()
 let accessToken: string
 let octoRest: Octokit
@@ -664,8 +667,8 @@ async function configureGit(appToken: string) {
 
   await $`git config --local --unset-all ${config}`
   await $`git config --local ${config} "AUTHORIZATION: basic ${newCredentials}"`
-  await $`git config --global user.name "opencode-agent[bot]"`
-  await $`git config --global user.email "opencode-agent[bot]@users.noreply.github.com"`
+  await $`git config --global user.name "${AGENT_NAME}"`
+  await $`git config --global user.email "${AGENT_EMAIL}"`
 }
 
 async function restoreGitConfig() {
