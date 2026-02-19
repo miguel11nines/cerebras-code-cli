@@ -131,7 +131,9 @@ type IssueQueryResponse = {
   }
 }
 
-const AGENT_USERNAME = "opencode-agent[bot]"
+const AGENT_LOGIN = "isaact-cerebras"
+const AGENT_NAME = "Cerebras Agent"
+const AGENT_EMAIL = "193945191+isaact-cerebras@users.noreply.github.com"
 const AGENT_REACTION = "eyes"
 const WORKFLOW_FILE = ".github/workflows/opencode.yml"
 
@@ -1007,8 +1009,8 @@ export const GithubRunCommand = cmd({
         const newCredentials = Buffer.from(`x-access-token:${appToken}`, "utf8").toString("base64")
 
         await $`git config --local ${config} "AUTHORIZATION: basic ${newCredentials}"`
-        await $`git config --global user.name "${AGENT_USERNAME}"`
-        await $`git config --global user.email "${AGENT_USERNAME}@users.noreply.github.com"`
+        await $`git config --global user.name "${AGENT_NAME}"`
+        await $`git config --global user.email "${AGENT_EMAIL}"`
       }
 
       async function restoreGitConfig() {
@@ -1179,7 +1181,7 @@ Co-authored-by: ${actor} <${actor}@users.noreply.github.com>"`
               content: AGENT_REACTION,
             })
 
-            const eyesReaction = reactions.data.find((r) => r.user?.login === AGENT_USERNAME)
+            const eyesReaction = reactions.data.find((r) => r.user?.login === AGENT_LOGIN)
             if (!eyesReaction) return
 
             return await octoRest.rest.reactions.deleteForPullRequestComment({
@@ -1197,7 +1199,7 @@ Co-authored-by: ${actor} <${actor}@users.noreply.github.com>"`
             content: AGENT_REACTION,
           })
 
-          const eyesReaction = reactions.data.find((r) => r.user?.login === AGENT_USERNAME)
+          const eyesReaction = reactions.data.find((r) => r.user?.login === AGENT_LOGIN)
           if (!eyesReaction) return
 
           return await octoRest.rest.reactions.deleteForIssueComment({
@@ -1215,7 +1217,7 @@ Co-authored-by: ${actor} <${actor}@users.noreply.github.com>"`
           content: AGENT_REACTION,
         })
 
-        const eyesReaction = reactions.data.find((r) => r.user?.login === AGENT_USERNAME)
+        const eyesReaction = reactions.data.find((r) => r.user?.login === AGENT_LOGIN)
         if (!eyesReaction) return
 
         await octoRest.rest.reactions.deleteForIssue({
