@@ -137,6 +137,8 @@ jobs:
         run: |
           DIR=$(ls -d dist/*-${{ matrix.target }} 2>/dev/null | head -1)
           cd "$DIR" && npm publish --access public --tag ${{ inputs.channel }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-wrapper:
     needs: publish-binaries
@@ -193,6 +195,8 @@ jobs:
 
       - name: Publish
         run: cd pkg && npm publish --access public --tag ${{ inputs.channel }}
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Summary
         run: |
