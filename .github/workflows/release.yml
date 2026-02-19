@@ -95,6 +95,12 @@ jobs:
           OPENCODE_RELEASE: "true"
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: actions/upload-artifact@v4
+        if: ${{ !matrix.baseline }}
+        with:
+          name: build-${{ matrix.target }}
+          path: packages/opencode/dist/
+
       - name: Smoke test - version
         if: ${{ !matrix.baseline }}
         working-directory: packages/opencode
@@ -130,8 +136,109 @@ jobs:
             exit 1
           fi
 
-  publish-release:
+  publish-npm-binaries:
     needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [darwin-arm64, darwin-x64, linux-x64, linux-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: build-${{ matrix.target }}
+          path: dist/
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm install -g npm@latest
+
+      - name: Prepare package
+        run: |
+          OS=$(echo "${{ matrix.target }}" | cut -d- -f1)
+          ARCH=$(echo "${{ matrix.target }}" | cut -d- -f2)
+          DIR=$(ls -d dist/*-${{ matrix.target }} 2>/dev/null | head -1)
+          cat > "$DIR/package.json" << EOF
+          {
+            "name": "cerebras-cli-${{ matrix.target }}",
+            "version": "${{ inputs.version }}",
+            "os": ["$OS"],
+            "cpu": ["$ARCH"],
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/kevint-cerebras/cerebras-code-cli"
+            }
+          }
+          EOF
+          chmod -R 755 "$DIR"
+
+      - name: Publish
+        run: |
+          DIR=$(ls -d dist/*-${{ matrix.target }} 2>/dev/null | head -1)
+          cd "$DIR" && npm publish --access public --tag ${{ inputs.channel }}
+
+  publish-npm-wrapper:
+    needs: publish-npm-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - run: npm install -g npm@latest
+
+      - name: Create wrapper package
+        run: |
+          mkdir -p pkg/bin
+          if [ -f packages/opencode/bin/cerebras ]; then
+            cp packages/opencode/bin/cerebras pkg/bin/cerebras
+          elif [ -f packages/opencode/bin/opencode ]; then
+            cp packages/opencode/bin/opencode pkg/bin/cerebras
+          fi
+          [ -f packages/opencode/bin/opencode.cjs ] && cp packages/opencode/bin/opencode.cjs pkg/bin/opencode.cjs || true
+          cp packages/opencode/script/postinstall.mjs pkg/postinstall.mjs
+          sed -i 's|"opencode-|"cerebras-cli-|g' pkg/bin/cerebras
+          sed -i 's|opencode-|cerebras-cli-|g' pkg/postinstall.mjs
+          cat > pkg/package.json << EOF
+          {
+            "name": "cerebras-cli",
+            "version": "${{ inputs.version }}",
+            "description": "Cerebras AI coding agent for the terminal",
+            "bin": {
+              "cerebras-cli": "./bin/cerebras"
+            },
+            "scripts": {
+              "postinstall": "bun ./postinstall.mjs || node ./postinstall.mjs"
+            },
+            "optionalDependencies": {
+              "cerebras-cli-darwin-arm64": "${{ inputs.version }}",
+              "cerebras-cli-darwin-x64": "${{ inputs.version }}",
+              "cerebras-cli-linux-arm64": "${{ inputs.version }}",
+              "cerebras-cli-linux-x64": "${{ inputs.version }}"
+            },
+            "license": "MIT",
+            "repository": {
+              "type": "git",
+              "url": "https://github.com/kevint-cerebras/cerebras-code-cli"
+            }
+          }
+          EOF
+
+      - name: Publish
+        run: cd pkg && npm publish --access public --tag ${{ inputs.channel }}
+
+  publish-release:
+    needs: [build, publish-npm-wrapper]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -150,6 +257,10 @@ jobs:
           echo "### Install" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
           echo "curl -fsSL https://raw.githubusercontent.com/kevint-cerebras/cerebras-code-cli/refs/heads/dev/install | bash" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "Or:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "npm install -g cerebras-cli" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**GitHub Release:** https://github.com/kevint-cerebras/cerebras-code-cli/releases/tag/v${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
