@@ -86,7 +86,7 @@ Switch with `Tab`:
 
 ## Team
 
-Kevin · Isaac · Daniel · Arihant
+Kevin · Isaac · Daniel
 
 ---
 
