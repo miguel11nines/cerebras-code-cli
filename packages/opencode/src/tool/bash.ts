@@ -13,6 +13,7 @@ import { Filesystem } from "@/util/filesystem"
 import { fileURLToPath } from "url"
 import { Flag } from "@/flag/flag.ts"
 import { Shell } from "@/shell/shell"
+import { Config } from "@/config/config"
 
 import { BashArity } from "@/permission/arity"
 import { Truncate } from "./truncation"
@@ -22,6 +23,14 @@ const MAX_METADATA_LENGTH = 30_000
 const DEFAULT_TIMEOUT = Flag.OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS || 2 * 60 * 1000
 
 export const log = Log.create({ service: "bash-tool" })
+
+function quote(value: string) {
+  return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+function gitCommit(words: string[]) {
+  return words[0] === "git" && words.includes("commit")
+}
 
 const resolveWasm = (asset: string) => {
   if (asset.startsWith("file://")) return fileURLToPath(asset)
@@ -163,8 +172,47 @@ export const BashTool = Tool.define("bash", async () => {
         })
       }
 
+      const config = await Config.get()
+      const enabled = config.attribution?.commit?.enabled ?? true
+      const name = config.attribution?.commit?.name ?? "Cerebras Agent"
+      const email = config.attribution?.commit?.email ?? "193945191+isaact-cerebras@users.noreply.github.com"
+      const trailer = `Co-authored-by: ${name} <${email}>`
+      const edits: Array<{ start: number; end: number }> = []
+
+      if (enabled) {
+        for (const node of tree.rootNode.descendantsOfType("command")) {
+          if (!node) continue
+          const target = node.parent?.type === "redirected_statement" ? node.parent : node
+          const command = []
+          for (let i = 0; i < node.childCount; i++) {
+            const child = node.child(i)
+            if (!child) continue
+            if (
+              child.type !== "command_name" &&
+              child.type !== "word" &&
+              child.type !== "string" &&
+              child.type !== "raw_string" &&
+              child.type !== "concatenation"
+            ) {
+              continue
+            }
+            command.push(child.text)
+          }
+          if (!gitCommit(command)) continue
+          if (target.text.includes(email)) continue
+          edits.push({ start: target.startIndex, end: target.endIndex })
+        }
+      }
+
+      const command = edits
+        .toReversed()
+        .reduce(
+          (result, edit) => result.slice(0, edit.end) + ` --trailer ${quote(trailer)}` + result.slice(edit.end),
+          params.command,
+        )
+
       const shellEnv = await Plugin.trigger("shell.env", { cwd }, { env: {} })
-      const proc = spawn(params.command, {
+      const proc = spawn(command, {
         shell,
         cwd,
         env: {

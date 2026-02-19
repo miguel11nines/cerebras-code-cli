@@ -1067,8 +1067,9 @@ export const GithubRunCommand = cmd({
         if (commit) {
           await $`git add .`
           if (isSchedule) {
-            // No co-author for scheduled events - the schedule is operating as the repo
-            await $`git commit -m "${summary}"`
+            await $`git commit -m "${summary}
+
+Co-authored-by: ${AGENT_NAME} <${AGENT_EMAIL}>"`
           } else {
             await $`git commit -m "${summary}
 
