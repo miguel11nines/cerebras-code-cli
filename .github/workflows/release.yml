@@ -73,9 +73,6 @@ jobs:
             target: linux-x64
           - os: ubuntu-24.04-arm
             target: linux-arm64
-          - os: ubuntu-latest
-            target: linux-x64-baseline
-            baseline: true
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -88,7 +85,7 @@ jobs:
 
       - name: Build and upload to GitHub release
         working-directory: packages/opencode
-        run: bun run ./script/build.ts --single ${{ matrix.baseline && '--baseline' || '' }}
+        run: bun run ./script/build.ts --single
         env:
           OPENCODE_CHANNEL: ${{ inputs.channel }}
           OPENCODE_VERSION: ${{ inputs.version }}
@@ -102,7 +99,6 @@ jobs:
           path: packages/opencode/dist/
 
       - name: Smoke test - version
-        if: ${{ !matrix.baseline }}
         working-directory: packages/opencode
         shell: bash
         run: |
@@ -111,7 +107,6 @@ jobs:
           "$BINARY" --version
 
       - name: Smoke test - help
-        if: ${{ !matrix.baseline }}
         working-directory: packages/opencode
         shell: bash
         run: |
@@ -119,7 +114,6 @@ jobs:
           "$BINARY" --help
 
       - name: Smoke test - server starts
-        if: matrix.os != 'windows-latest' && !matrix.baseline
         working-directory: packages/opencode
         shell: bash
         run: |
