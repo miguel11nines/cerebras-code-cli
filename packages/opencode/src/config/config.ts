@@ -1056,6 +1056,27 @@ export namespace Config {
         .string()
         .optional()
         .describe("Custom username to display in conversations instead of system username"),
+      attribution: z
+        .object({
+          commit: z
+            .object({
+              enabled: z
+                .boolean()
+                .optional()
+                .describe("Add default Co-authored-by trailer to git commits run by the CLI"),
+              name: z
+                .string()
+                .optional()
+                .describe("Name used in default commit co-author trailer"),
+              email: z
+                .string()
+                .optional()
+                .describe("Email used in default commit co-author trailer"),
+            })
+            .optional(),
+        })
+        .optional()
+        .describe("Default attribution behavior for commits and PRs"),
       mode: z
         .object({
           build: Agent.optional(),
