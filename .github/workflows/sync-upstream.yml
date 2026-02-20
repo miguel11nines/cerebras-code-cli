@@ -54,38 +54,29 @@ jobs:
             echo "Conflicts in: $(cat /tmp/conflict-files.txt)"
           fi
 
-      - name: Resolve conflicts with Claude
+      - name: Handle conflicts
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.has_conflicts == 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          # Install Claude CLI
-          npm install -g @anthropic-ai/claude-code@latest
+          # Accept theirs to get a mergeable branch, Claude will fix in the PR
+          while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              git checkout --theirs "$file" 2>/dev/null || true
+              git add "$file"
+            else
+              git rm "$file" 2>/dev/null || true
+            fi
+          done < /tmp/conflict-files.txt
+          git commit -m "merge upstream (conflicts auto-accepted - needs review)"
 
-          CONFLICTS=$(cat /tmp/conflict-files.txt)
-
-          # Let Claude resolve each conflicted file
-          claude --print "You are resolving git merge conflicts. The repo is in a merge state.
-
-          Conflicting files:
-          $CONFLICTS
-
-          Rules:
-          - Keep OUR changes (cerebras fork customizations) when they conflict with upstream
-          - Accept upstream changes for everything else (new features, bug fixes, refactors)
-          - Our customizations include: cerebras branding, custom agents (ralph, docs, ask), install scripts, publish workflows, and anything in .cerebras/
-          - If a file was deleted on our side but modified upstream, keep it deleted
-
-          For each file: read it, resolve the conflict markers (<<<<<<< ======= >>>>>>>), write the resolved version. Then run: git add -A && git commit --no-edit"
-
-      - name: Push resolved branch
-        if: steps.check.outputs.behind != '0' && steps.merge.outputs.has_conflicts == 'true'
+      - name: Push branch
+        if: steps.check.outputs.behind != '0'
         run: |
           BRANCH="${{ steps.merge.outputs.branch }}"
-          git push origin "$BRANCH" 2>/dev/null || git push origin "$BRANCH" --force
+          git push origin "$BRANCH"
 
       - name: Create PR
         if: steps.check.outputs.behind != '0'
+        id: pr
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -100,11 +91,12 @@ jobs:
           if [ "$HAD_CONFLICTS" = "true" ]; then
             BODY="$BODY
 
-          **Merge conflicts were auto-resolved by Claude.** Please review the conflict resolutions carefully before merging."
+          **Had merge conflicts** — accepted upstream versions. @claude please review the conflicting files and fix any of our customizations (cerebras branding, custom agents, install scripts, publish workflows) that were overwritten by upstream."
           fi
 
-          gh pr create \
+          PR_URL=$(gh pr create \
             --base dev \
             --head "$BRANCH" \
             --title "chore: sync upstream opencode ($BEHIND commits)" \
-            --body "$BODY"
+            --body "$BODY")
+          echo "url=$PR_URL" >> $GITHUB_OUTPUT
