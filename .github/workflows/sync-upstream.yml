@@ -54,23 +54,29 @@ jobs:
             echo "Conflicts in: $(cat /tmp/conflict-files.txt)"
           fi
 
-      - name: Claude resolves conflicts
+      - name: Resolve conflicts with Claude
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.has_conflicts == 'true'
-        uses: anthropics/claude-code-action@beta
-        with:
-          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          direct_prompt: |
-            There are merge conflicts from syncing with upstream sst/opencode. Resolve them.
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          # Install Claude CLI
+          npm install -g @anthropic-ai/claude-code@latest
 
-            Rules:
-            - Keep OUR changes (cerebras fork customizations) when they conflict with upstream
-            - Accept upstream changes for everything else (new features, bug fixes, refactors)
-            - Our customizations include: cerebras branding, custom agents (ralph, docs, ask), install scripts, publish workflows, and anything in .cerebras/
-            - If a file was deleted on our side but modified upstream, keep it deleted
-            - After resolving, run: git add -A && git commit --no-edit
+          CONFLICTS=$(cat /tmp/conflict-files.txt)
 
-            Conflicting files:
-            $(cat /tmp/conflict-files.txt)
+          # Let Claude resolve each conflicted file
+          claude --print "You are resolving git merge conflicts. The repo is in a merge state.
+
+          Conflicting files:
+          $CONFLICTS
+
+          Rules:
+          - Keep OUR changes (cerebras fork customizations) when they conflict with upstream
+          - Accept upstream changes for everything else (new features, bug fixes, refactors)
+          - Our customizations include: cerebras branding, custom agents (ralph, docs, ask), install scripts, publish workflows, and anything in .cerebras/
+          - If a file was deleted on our side but modified upstream, keep it deleted
+
+          For each file: read it, resolve the conflict markers (<<<<<<< ======= >>>>>>>), write the resolved version. Then run: git add -A && git commit --no-edit"
 
       - name: Push resolved branch
         if: steps.check.outputs.behind != '0' && steps.merge.outputs.has_conflicts == 'true'
