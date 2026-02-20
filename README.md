@@ -54,12 +54,6 @@ If you do not already have one, sign up for an account at [cloud.cerebras.ai](ht
 npm install -g cerebras-cli
 ```
 
-Or use the one-liner:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/kevint-cerebras/cerebras-code-cli/refs/heads/dev/install | bash
-```
-
 > [!TIP]
 > Remove versions older than 0.1.x before installing.
 
@@ -141,19 +135,6 @@ If you're using this fork as `cerebras`, you can run the built-in ACP server and
   }
 }
 ```
-
----
-
-## Desktop App (BETA)
-
-OpenCode is also available as a desktop application. Download directly from the [releases page](https://github.com/anomalyco/opencode/releases) or [opencode.ai/download](https://opencode.ai/download).
-
-| Platform              | Download                              |
-| --------------------- | ------------------------------------- |
-| macOS (Apple Silicon) | `opencode-desktop-darwin-aarch64.dmg` |
-| macOS (Intel)         | `opencode-desktop-darwin-x64.dmg`     |
-| Windows               | `opencode-desktop-windows-x64.exe`    |
-| Linux                 | `.deb`, `.rpm`, or AppImage           |
 
 ---
 
