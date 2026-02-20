@@ -94,9 +94,16 @@ jobs:
           **Had merge conflicts** — accepted upstream versions. @claude please review the conflicting files and fix any of our customizations (cerebras branding, custom agents, install scripts, publish workflows) that were overwritten by upstream."
           fi
 
-          PR_URL=$(gh pr create \
-            --base dev \
-            --head "$BRANCH" \
-            --title "chore: sync upstream opencode ($BEHIND commits)" \
-            --body "$BODY")
+          PR_URL=$(curl -s -X POST \
+            -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls" \
+            -d "$(jq -n \
+              --arg title "chore: sync upstream opencode ($BEHIND commits)" \
+              --arg body "$BODY" \
+              --arg head "$BRANCH" \
+              --arg base "dev" \
+              '{title: $title, body: $body, head: $head, base: $base}')" \
+            | jq -r '.html_url')
           echo "url=$PR_URL" >> $GITHUB_OUTPUT
+          echo "Created PR: $PR_URL"
