@@ -36,19 +36,10 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     if (!lastMsg || (lastMsg.agent !== "ralph" && (lastMsg as AssistantMessage).mode !== "ralph")) return undefined
 
     let planSummary: string | undefined
-    let iteration = 0
-
-    // Find last real (non-synthetic) user message — iteration count resets from here
-    let lastRealIdx = -1
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === "user") {
-        const parts = sync.data.part[msgs[i].id] ?? []
-        if (!parts.every((p: any) => p.type === "text" && p.synthetic)) {
-          lastRealIdx = i
-          break
-        }
-      }
-    }
+    const tasks = todo()
+    const done = tasks.filter((t) => t.status === "completed" || t.status === "cancelled").length
+    const maxIterations = tasks.length > 0 ? tasks.length : 25
+    const iteration = tasks.length > 0 ? Math.min(tasks.length, done + 1) : 1
 
     for (let i = 0; i < msgs.length; i++) {
       const msg = msgs[i]
@@ -89,24 +80,17 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
         }
       }
 
-      // Count ralph-continue synthetic messages in the current loop only
-      if (i > lastRealIdx && msg.role === "user") {
-        const parts = sync.data.part[msg.id] ?? []
-        if (parts.some((p: any) => p.type === "text" && p.metadata?.source === "ralph-continue")) {
-          iteration++
-        }
-      }
     }
 
     return {
       iteration,
-      maxIterations: 25,
+      maxIterations,
       plan: planSummary,
     }
   })
 
   // Sort MCP servers alphabetically for consistent display order
-  const mcpEntries = createMemo(() => Object.entries(sync.data.mcp).sort(([a], [b]) => a.localeCompare(b)))
+  const mcpEntries = createMemo(() => Object.entries(sync.data.mcp ?? {}).sort(([a], [b]) => a.localeCompare(b)))
 
   // Count connected and error MCP servers for collapsed header display
   const connectedMcpCount = createMemo(() => mcpEntries().filter(([_, item]) => item.status === "connected").length)
@@ -202,11 +186,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
             </Show>
             <Show when={ralph()?.plan}>
               <box>
-                <box
-                  flexDirection="row"
-                  gap={1}
-                  onMouseDown={() => setExpanded("plan", !expanded.plan)}
-                >
+                <box flexDirection="row" gap={1} onMouseDown={() => setExpanded("plan", !expanded.plan)}>
                   <text fg={theme.text}>{expanded.plan ? "▼" : "▶"}</text>
                   <text fg={theme.text}>
                     <b>Plan</b>
@@ -215,10 +195,7 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
                 <Show when={expanded.plan}>
                   <For each={ralph()!.plan!.split("\n")}>
                     {(line) => (
-                      <text
-                        fg={line.startsWith("[") ? theme.text : theme.textMuted}
-                        wrapMode="word"
-                      >
+                      <text fg={line.startsWith("[") ? theme.text : theme.textMuted} wrapMode="word">
                         {line.startsWith("[") ? <b>{line.slice(1, -1)}</b> : `• ${line.trim()}`}
                       </text>
                     )}

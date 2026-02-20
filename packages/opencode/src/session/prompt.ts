@@ -94,6 +94,137 @@ export namespace SessionPrompt {
     if (match) throw new Session.BusyError(sessionID)
   }
 
+  function text(input: Uint8Array | Buffer | undefined) {
+    if (!input?.length) return ""
+    return new TextDecoder().decode(input).trim()
+  }
+
+  function lines(input: string, count: number) {
+    return input
+      .split("\n")
+      .map((x) => x.trimEnd())
+      .filter(Boolean)
+      .slice(0, count)
+      .join("\n")
+  }
+
+  function ralphState(todos: Todo.Info[], fallback: number) {
+    if (todos.length === 0) {
+      return {
+        iteration: 1,
+        maxIterations: fallback,
+        remaining: 0,
+        current: undefined as string | undefined,
+      }
+    }
+    const done = todos.filter((x) => x.status === "completed" || x.status === "cancelled").length
+    const remaining = todos.filter((x) => x.status !== "completed" && x.status !== "cancelled").length
+    const current = todos.find((x) => x.status !== "completed" && x.status !== "cancelled")?.content
+    return {
+      iteration: Math.min(todos.length, done + 1),
+      maxIterations: todos.length,
+      remaining,
+      current,
+    }
+  }
+
+  function isRalphContinueMessage(input: MessageV2.WithParts | undefined) {
+    if (!input) return false
+    if (input.info.role !== "user") return false
+    return input.parts.some(
+      (part) =>
+        part.type === "text" && "metadata" in part && (part as MessageV2.TextPart).metadata?.source === "ralph-continue",
+    )
+  }
+
+  function ralphTransition(messages: MessageV2.WithParts[]) {
+    const users = messages.flatMap((item, index) => {
+      if (item.info.role !== "user") return []
+      return [
+        {
+          index,
+          agent: (item.info as MessageV2.User).agent,
+        },
+      ]
+    })
+    for (let i = users.length - 1; i >= 0; i--) {
+      const current = users[i]
+      if (current.agent !== "ralph") continue
+      const previous = users[i - 1]
+      if (previous?.agent === "ralph") continue
+      return {
+        index: current.index,
+        hasPrior: !!previous,
+      }
+    }
+  }
+
+  async function ralphCommit(input: {
+    iteration: number
+    maxIterations: number
+    task?: string
+  }) {
+    if (Instance.project.vcs !== "git") return
+
+    const status = await $`git status --porcelain=v1`.quiet().nothrow().cwd(Instance.worktree)
+    if (status.exitCode !== 0) {
+      log.warn("ralph commit skipped: unable to read git status", { output: [text(status.stderr), text(status.stdout)] })
+      return
+    }
+    const dirty = text(status.stdout)
+    if (!dirty) return
+
+    const files = dirty
+      .split("\n")
+      .map((x) => x.slice(3).trim())
+      .filter(Boolean)
+    const subject = `ralph: iteration ${input.iteration}/${input.maxIterations} - ${(input.task ?? `task ${input.iteration}`).slice(0, 72)}`
+    const body = [
+      `Ralph iteration ${input.iteration}/${input.maxIterations}`,
+      input.task ? `Task: ${input.task}` : "",
+      files.length ? `Files: ${files.slice(0, 12).join(", ")}` : "",
+    ]
+      .filter(Boolean)
+      .join("\n")
+
+    const add = await $`git add -A`.quiet().nothrow().cwd(Instance.worktree)
+    if (add.exitCode !== 0) {
+      log.warn("ralph commit skipped: git add failed", { output: [text(add.stderr), text(add.stdout)] })
+      return
+    }
+
+    const commit = await $`git commit -m ${subject} -m ${body}`.quiet().nothrow().cwd(Instance.worktree)
+    if (commit.exitCode === 0) {
+      log.info("ralph iteration committed", { iteration: input.iteration, max: input.maxIterations, task: input.task })
+      return
+    }
+
+    log.warn("ralph commit failed", { output: [text(commit.stderr), text(commit.stdout)] })
+  }
+
+  async function ralphGitContext() {
+    if (Instance.project.vcs !== "git") return ""
+    const branch = await $`git rev-parse --abbrev-ref HEAD`.quiet().nothrow().cwd(Instance.worktree)
+    if (branch.exitCode !== 0) return ""
+
+    const [status, recent, staged, unstaged] = await Promise.all([
+      $`git status --short --branch`.quiet().nothrow().cwd(Instance.worktree),
+      $`git log --oneline -n 8`.quiet().nothrow().cwd(Instance.worktree),
+      $`git diff --cached --name-status`.quiet().nothrow().cwd(Instance.worktree),
+      $`git diff --name-status`.quiet().nothrow().cwd(Instance.worktree),
+    ])
+
+    const parts = [
+      `## Git Branch\n${text(branch.stdout)}`,
+      text(status.stdout) ? `## Git Status\n${lines(text(status.stdout), 30)}` : "",
+      text(recent.stdout) ? `## Recent Commits\n${lines(text(recent.stdout), 12)}` : "",
+      text(staged.stdout) ? `## Staged Diff\n${lines(text(staged.stdout), 20)}` : "",
+      text(unstaged.stdout) ? `## Unstaged Diff\n${lines(text(unstaged.stdout), 20)}` : "",
+    ].filter(Boolean)
+
+    return parts.join("\n\n")
+  }
+
   export const PromptInput = z.object({
     sessionID: Identifier.schema("session"),
     messageID: Identifier.schema("message").optional(),
@@ -345,7 +476,7 @@ export namespace SessionPrompt {
       // Only trigger if auto_switch_models is enabled and we haven't already switched
       Config.global.reset()
       const switchCfg = await Config.getGlobal()
-      const autoSwitchEnabled = switchCfg.auto_switch_models !== false
+      const autoSwitchEnabled = (switchCfg as any).auto_switch_models !== false
       
       if (autoSwitchEnabled) {
         const latestAssistantMsg = msgs.filter((m) => m.info.role === "assistant").at(-1)
@@ -404,34 +535,31 @@ export namespace SessionPrompt {
             break
           }
 
-          // Count ralph continues since the last real (non-synthetic) user message.
-          // Naturally resets when the user sends a new message after a loop ends.
-          let lastRealIdx = -1
-          for (let i = msgs.length - 1; i >= 0; i--) {
-            if (
-              msgs[i].info.role === "user" &&
-              !msgs[i].parts.every((p) => "synthetic" in p && p.synthetic)
-            ) {
-              lastRealIdx = i
-              break
-            }
-          }
-          const ralphIteration = msgs
-            .slice(lastRealIdx + 1)
-            .filter(
-              (m) =>
-                m.info.role === "user" &&
-                m.parts.some(
-                  (p) =>
-                    p.type === "text" &&
-                    "metadata" in p &&
-                    (p as MessageV2.TextPart).metadata?.source === "ralph-continue",
-                ),
-            ).length
-          if (ralphIteration < maxRalphIterations) {
+          const todos = await Todo.get(sessionID)
+          const loop = ralphState(todos, maxRalphIterations)
+          const hasTasks = todos.length > 0
+          const hasRemaining = loop.remaining > 0
+          const continueCount = msgs.filter(
+            (m) =>
+              m.info.role === "user" &&
+              m.parts.some(
+                (p) =>
+                  p.type === "text" &&
+                  "metadata" in p &&
+                  (p as MessageV2.TextPart).metadata?.source === "ralph-continue",
+              ),
+          ).length
+          const shouldContinue = hasTasks ? hasRemaining : continueCount < maxRalphIterations
+          if (shouldContinue) {
+            await ralphCommit({
+              iteration: loop.iteration,
+              maxIterations: loop.maxIterations,
+              task: loop.current,
+            })
             log.info("ralph loop continuing", {
-              iteration: ralphIteration + 1,
-              max: maxRalphIterations,
+              iteration: loop.iteration,
+              max: loop.maxIterations,
+              task: loop.current,
             })
             const continueMsg: MessageV2.User = {
               id: Identifier.ascending("message"),
@@ -449,7 +577,12 @@ export namespace SessionPrompt {
               sessionID,
               text: RALPH_CONTINUE,
               synthetic: true,
-              metadata: { source: "ralph-continue" },
+              metadata: {
+                source: "ralph-continue",
+                iteration: loop.iteration,
+                maxIterations: loop.maxIterations,
+                task: loop.current,
+              },
             })
             continue
           }
@@ -756,30 +889,33 @@ export namespace SessionPrompt {
 
       let sessionMessages = clone(msgs)
 
-      // Ralph: strip message history ONLY during autonomous loop iterations (synthetic
-      // ralph-continue messages). During planning/user interaction, keep full history so the
-      // model remembers the original request and the conversation.
+      // Ralph context behavior:
+      // - Planning/bootstrap keeps full history so Ralph can capture user intent.
+      // - Once the plan file exists, execution strips context before the latest
+      //   transition into Ralph to avoid polluting Ralph with pre-Ralph chat.
       if (lastUser.agent === "ralph") {
-        const isSyntheticContinue = sessionMessages
-          .findLast((m) => m.info.role === "user")
-          ?.parts.some(
-            (p) =>
-              p.type === "text" &&
-              "metadata" in p &&
-              (p as MessageV2.TextPart).metadata?.source === "ralph-continue",
-          )
-        if (isSyntheticContinue) {
+        const planPath = path.join(Instance.worktree, ".opencode/plans/ralph-plan.md")
+        const progressPath = path.join(Instance.worktree, ".opencode/plans/progress.txt")
+        const planExists = await Bun.file(planPath).exists()
+        const transition = ralphTransition(sessionMessages)
+
+        if (planExists && transition?.hasPrior) {
+          sessionMessages = sessionMessages.slice(transition.index)
+        }
+
+        const isSyntheticContinue = isRalphContinueMessage(sessionMessages.findLast((m) => m.info.role === "user"))
+        if (planExists && isSyntheticContinue) {
           const turnStart = sessionMessages.findLastIndex((m) => m.info.role === "user")
           if (turnStart > 0) {
             sessionMessages = sessionMessages.slice(turnStart)
           }
         }
 
-        // Inject CWD, plan, progress log, and task list so the model has context
-        const lastUserMsg = sessionMessages.find((m) => m.info.role === "user")
+        // Inject CWD, plan, progress log, tasks, and git context so each iteration
+        // can start fresh from externalized state.
+        const lastUserMsg = sessionMessages.findLast((m) => m.info.role === "user")
         if (lastUserMsg) {
-          const planPath = path.join(Instance.worktree, ".opencode/plans/ralph-plan.md")
-          const progressPath = path.join(Instance.worktree, ".opencode/plans/progress.txt")
+          const git = await ralphGitContext()
           const planContent = await Bun.file(planPath)
             .text()
             .catch(() => "")
@@ -796,6 +932,7 @@ export namespace SessionPrompt {
             planContent ? `## Plan\n${planContent}` : "",
             progressContent ? `## Progress\n${progressContent}` : "",
             todoList ? `## Tasks\n${todoList}` : "",
+            git,
           ].filter(Boolean)
 
           if (parts.length > 0) {
@@ -1049,7 +1186,7 @@ export namespace SessionPrompt {
       })
     }
 
-    for (const [key, item] of Object.entries(await MCP.tools())) {
+    for (const [key, item] of Object.entries((await MCP.tools()) ?? {})) {
       const execute = item.execute
       if (!execute) continue
 
