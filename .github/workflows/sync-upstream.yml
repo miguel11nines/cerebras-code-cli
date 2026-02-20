@@ -1,0 +1,104 @@
+name: Sync upstream
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # Daily at 8am UTC
+  workflow_dispatch: # Manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add upstream remote
+        run: |
+          git remote add upstream https://github.com/sst/opencode.git || true
+          git fetch upstream dev
+
+      - name: Check for new commits
+        id: check
+        run: |
+          BEHIND=$(git rev-list HEAD..upstream/dev --count)
+          echo "behind=$BEHIND" >> $GITHUB_OUTPUT
+          echo "Commits behind upstream: $BEHIND"
+
+      - name: Attempt merge
+        if: steps.check.outputs.behind != '0'
+        id: merge
+        run: |
+          BRANCH="auto/sync-upstream-$(date +%Y%m%d)"
+          echo "branch=$BRANCH" >> $GITHUB_OUTPUT
+          git checkout -b "$BRANCH"
+
+          if git merge upstream/dev --no-edit; then
+            echo "has_conflicts=false" >> $GITHUB_OUTPUT
+            git push origin "$BRANCH"
+          else
+            # Save conflict info for Claude
+            git diff --name-only --diff-filter=U > /tmp/conflict-files.txt
+            echo "has_conflicts=true" >> $GITHUB_OUTPUT
+            echo "Conflicts in: $(cat /tmp/conflict-files.txt)"
+          fi
+
+      - name: Claude resolves conflicts
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.has_conflicts == 'true'
+        uses: anthropics/claude-code-action@beta
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          direct_prompt: |
+            There are merge conflicts from syncing with upstream sst/opencode. Resolve them.
+
+            Rules:
+            - Keep OUR changes (cerebras fork customizations) when they conflict with upstream
+            - Accept upstream changes for everything else (new features, bug fixes, refactors)
+            - Our customizations include: cerebras branding, custom agents (ralph, docs, ask), install scripts, publish workflows, and anything in .cerebras/
+            - If a file was deleted on our side but modified upstream, keep it deleted
+            - After resolving, run: git add -A && git commit --no-edit
+
+            Conflicting files:
+            $(cat /tmp/conflict-files.txt)
+
+      - name: Push resolved branch
+        if: steps.check.outputs.behind != '0' && steps.merge.outputs.has_conflicts == 'true'
+        run: |
+          BRANCH="${{ steps.merge.outputs.branch }}"
+          git push origin "$BRANCH" 2>/dev/null || git push origin "$BRANCH" --force
+
+      - name: Create PR
+        if: steps.check.outputs.behind != '0'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          BRANCH="${{ steps.merge.outputs.branch }}"
+          BEHIND="${{ steps.check.outputs.behind }}"
+          HAD_CONFLICTS="${{ steps.merge.outputs.has_conflicts }}"
+
+          BODY="Automated sync from [sst/opencode](https://github.com/sst/opencode) dev branch.
+
+          **$BEHIND new commits** from upstream."
+
+          if [ "$HAD_CONFLICTS" = "true" ]; then
+            BODY="$BODY
+
+          **Merge conflicts were auto-resolved by Claude.** Please review the conflict resolutions carefully before merging."
+          fi
+
+          gh pr create \
+            --base dev \
+            --head "$BRANCH" \
+            --title "chore: sync upstream opencode ($BEHIND commits)" \
+            --body "$BODY"
