@@ -3,6 +3,7 @@ import { createMemo, For, Show, Switch, Match } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useTheme } from "../../context/theme"
 import { Locale } from "@/util/locale"
+import { Token } from "@/util/token"
 import path from "path"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { Global } from "@/global"
@@ -79,7 +80,6 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
           }
         }
       }
-
     }
 
     return {
@@ -119,6 +119,26 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
     return {
       tokens: total.toLocaleString(),
       percentage: model?.limit.context ? Math.round((total / model.limit.context) * 100) : null,
+      cachePercent: Token.cachePercent(last.tokens),
+      cacheTokens: last.tokens.cache.read,
+    }
+  })
+
+  const cacheStats = createMemo(() => {
+    let input = 0
+    let read = 0
+    let write = 0
+    for (const msg of messages()) {
+      if (msg.role !== "assistant") continue
+      input += msg.tokens.input
+      read += msg.tokens.cache.read
+      write += msg.tokens.cache.write
+    }
+    const pct = Token.cachePercent({ input, cache: { read, write } })
+    if (pct === null) return null
+    return {
+      percent: pct,
+      tokens: read,
     }
   })
 
@@ -209,6 +229,16 @@ export function Sidebar(props: { sessionID: string; overlay?: boolean }) {
               </text>
               <text fg={theme.textMuted}>{context()?.tokens ?? 0} tokens</text>
               <text fg={theme.textMuted}>{context()?.percentage ?? 0}% used</text>
+              <Show when={context()?.cachePercent != null}>
+                <text fg={theme.success}>
+                  {context()!.cachePercent}% cached ({context()!.cacheTokens.toLocaleString()} tokens)
+                </text>
+              </Show>
+              <Show when={cacheStats()}>
+                <text fg={theme.textMuted}>
+                  Session cache: {cacheStats()!.percent}% ({cacheStats()!.tokens.toLocaleString()} tokens)
+                </text>
+              </Show>
               <text fg={theme.textMuted}>{cost()} spent</text>
             </box>
             <Show when={mcpEntries().length > 0}>

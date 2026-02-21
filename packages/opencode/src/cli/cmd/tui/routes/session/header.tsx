@@ -8,6 +8,7 @@ import type { AssistantMessage, Session } from "@opencode-ai/sdk/v2"
 import { useCommandDialog } from "@tui/component/dialog-command"
 import { useKeybind } from "../../context/keybind"
 import { useTerminalDimensions } from "@opentui/solid"
+import { Token } from "@/util/token"
 
 const Title = (props: { session: Accessor<Session> }) => {
   const { theme } = useTheme()
@@ -55,6 +56,10 @@ export function Header() {
     let result = total.toLocaleString()
     if (model?.limit.context) {
       result += "  " + Math.round((total / model.limit.context) * 100) + "%"
+    }
+    const pct = Token.cachePercent(last.tokens)
+    if (pct !== null) {
+      result += "  cache " + pct + "%"
     }
     return result
   })

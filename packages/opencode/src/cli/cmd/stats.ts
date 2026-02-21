@@ -5,6 +5,7 @@ import { bootstrap } from "../bootstrap"
 import { Storage } from "../../storage/storage"
 import { Project } from "../../project/project"
 import { Instance } from "../../project/instance"
+import { Token } from "../../util/token"
 
 interface SessionStats {
   totalSessions: number
@@ -358,6 +359,9 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
   console.log(renderRow("Output", formatNumber(stats.totalTokens.output)))
   console.log(renderRow("Cache Read", formatNumber(stats.totalTokens.cache.read)))
   console.log(renderRow("Cache Write", formatNumber(stats.totalTokens.cache.write)))
+  const globalCachePct = Token.cachePercent(stats.totalTokens)
+  const cacheHitRate = globalCachePct !== null ? globalCachePct + "%" : "N/A"
+  console.log(renderRow("Cache Hit Rate", cacheHitRate))
   console.log("└────────────────────────────────────────────────────────┘")
   console.log()
 
@@ -377,6 +381,9 @@ export function displayStats(stats: SessionStats, toolLimit?: number, modelLimit
       console.log(renderRow("  Output Tokens", formatNumber(usage.tokens.output)))
       console.log(renderRow("  Cache Read", formatNumber(usage.tokens.cache.read)))
       console.log(renderRow("  Cache Write", formatNumber(usage.tokens.cache.write)))
+      const modelCachePct = Token.cachePercent(usage.tokens)
+      const modelCacheHitRate = modelCachePct !== null ? modelCachePct + "%" : "N/A"
+      console.log(renderRow("  Cache Hit Rate", modelCacheHitRate))
       console.log(renderRow("  Cost", `$${usage.cost.toFixed(4)}`))
       console.log("├────────────────────────────────────────────────────────┤")
     }
